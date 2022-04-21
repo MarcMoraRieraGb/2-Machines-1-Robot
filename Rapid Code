@@ -1,0 +1,259 @@
+MODULE Module1
+  
+!Workobject
+    !Maquines    
+    PERS wobjdata M1 := [ FALSE, TRUE, "", [ [0, 0, 0], [1, 0, 0 ,0] ], [ [458.68, -319.36, 260], [0.707107, 0, 0 ,0.707107] ] ];
+    PERS wobjdata M2 := [ FALSE, TRUE, "", [ [0, 0, 0], [1, 0, 0 ,0] ], [ [458.68, 369.89, 260], [0, 0, 0 ,1] ] ];
+    !Transfer
+    PERS wobjdata Transfer := [ FALSE, TRUE, "", [ [0, 0, 0], [1, 0, 0 ,0] ], [ [544.84,-26.17, 260], [1, 0, 0 ,0] ] ];
+    !Taula Test
+    PERS wobjdata Taula_Test := [ FALSE, TRUE, "", [ [0, 0, 0], [1, 0, 0 ,0] ], [ [679.7,-75,300], [1, 0, 0 ,0] ] ];
+!Robtarget
+    CONST robtarget home:=[[518.48,-7.58,706.08],[0.701558,0.00134686,0.712554,-0.00899221],[-1,-1,0,0],[9E+09,9E+09,9E+09,9E+09,9E+09,9E+09]];
+	CONST robtarget M1Seg:=[[458.68,-319.36,324.88],[0.00267897,0.0151917,0.999878,0.00239645],[-1,0,-1,0],[9E+9,9E+9,9E+9,9E+9,9E+9,9E+9]];
+	CONST robtarget M2Seg:=[[456.10,319.89,325.23],[0.0171296,0.00829087,-0.999801,-0.00603244],[0,0,0,0],[9E+9,9E+9,9E+9,9E+9,9E+9,9E+9]];
+    CONST robtarget trseg:=[[544.84,-26.17,325.18],[0.0122609,0.0148113,-0.999806,0.00426283],[-1,-1,-1,0],[9E+9,9E+9,9E+9,9E+9,9E+9,9E+9]];
+	CONST robtarget testsg:=[[689.70,-26.17,415.46],[0.0121603,0.0148915,-0.999812,-0.00260042],[-1,0,-1,0],[9E+9,9E+9,9E+9,9E+9,9E+9,9E+9]];
+    CONST robtarget Comprovacio:=[[0,0,0],[0.00267897,0.0151917,0.999878,0.00239645],[-1,0,-1,0],[9E+9,9E+9,9E+9,9E+9,9E+9,9E+9]];
+!Variables
+    !Numeriques
+    PERS num TotalM1:=21;
+    PERS num TotalM2:=2;
+    PERS num TotalTest:=1;
+    VAR num i:=1;
+    VAR num R11;
+    VAR num R22;
+    VAR num R33;
+    VAR num q1;
+    VAR num q2;
+    VAR num q3;
+    VAR num q4;
+    VAR num lectura:=0;
+    VAR num contadorEspera:=0;
+    VAR intnum sig1int;
+    VAR intnum timeM1;
+    VAR intnum TimeTest;
+    VAR intnum Time10s;
+    !Matrius Numeriques
+    VAR num data{17};
+    !Booleanes
+    PERS bool Activa_PLC:=FALSE;
+    VAR bool activacio:=false;
+    VAR bool PeçaM2:=True;
+    VAR bool PeçaTest:=false;
+    VAR bool Agafar_test:=FALSE;
+    !String
+    PERS string Tipus;
+    !File
+    VAR iodev file;
+      
+    !***********************************************************
+    
+    PROC main()
+    MoveJ home, v1000, z50, tool0;                                                                  !Posició de repos
+    Open "HOME:Coordenades.txt", file \Read;                                                        !Obertura del fitxer
+   
+    WHILE(lectura<EOF_NUM) DO                                                                       !Bucle per llegir el fitxer
+        if i<=17 then
+        lectura:=ReadNum(file\Delim:=";");                                                          !Delimitem les dades utilitzant el ";"
+        data{i}:=lectura; 
+        i:=i+1;
+        ENDIF
+    ENDWHILE
+    
+    Quaternions;                                                                                    !Cridem la funció per crear quaternions                            
+    
+    IDelete timeM1;                                                                                 !Reiniciem la variable asociada a la Interrupcio Timer                                                                         
+    IDelete TimeTest;                                                                               !Reiniciem la variable asociada a la Interrupcio Timer
+    
+    CONNECT timeM1 WITH TimerM1;                                                                    !Connectem la Funcio Trap amb la seva variable
+    CONNECT TimeTest WITH TimerTest;                                                                !Connectem la Funcio Trap amb la seva variable
+    CONNECT sig1int WITH SensorM2;                                                                  !Connectem la Funcio Trap amb la seva variable
+    ISignalDO signal1,1,sig1int;                                                                    !Configuracio de la Interrupcio del sensor i connexio amb la seva variable
+    ITimer 30, timeM1;                                                                              !Configuracio del temps de la Interrupcio Timer i connexio amb la seva variable i l'inicialitzem
+    ITimer 180, TimeTest;                                                                           !Configuracio del temps de la Interrupcio Timer i connexio amb la seva variable i l'inicialitzem
+    
+    activacio:=TRUE;                                                                                !Variable per a crear un bucle infinit per a que el robot traballi indefinidament
+    
+    WHILE (activacio=TRUE) DO                                                                       !Bucle infinit
+        IF Agafar_test=TRUE THEN
+            MovimentTest;                                                                           !Funcio per treure la peça de la taula de test i deixar-la al transfer
+        ENDIF
+        
+        IF contadorEspera>=1 THEN                                                                   !Condicio per ha agafar una peça de la Maquina 1 solament si detecta que hi ha 1 o mes peces esperant
+            Tipus:="M1";                                                                            !Definim quina peça estem agafant per emmagatzamar-la en la BBDD
+            MovimentM1;                                                                             !Funcio per agafar una peça de la Maquina 1 i deixar-la al transfer o a la taula test si han passat els 180s                                                                              
+        ENDIF
+        
+        IF PeçaM2=TRUE THEN                                                                         !Condicio per ha agafar una peça de la Maquina 2 solament si el sensor detecta que hi ha 1 peça
+            Tipus:="M2";                                                                            !Definim quina peça estem agafant per emmagatzamar-la en la BBDD
+            PeçaM2:=FALSE;                                                                          !Posem la variable a false per tal de desactiva la condicio
+    		Moviment2;                                                                              !Funcio per agafar una peça de la Maquina 2 i deixar-la al transfer
+        ENDIF
+    ENDWHILE
+   
+    ENDPROC
+    
+    PROC MovimentM1()       !Funcio d'agafar la peça de la Maquina 1. Aquesta funcio pot decidir si deixar-la al transfer o la taula del test
+        
+        MoveJ home, v1000, z50, tool0;                                                              
+        MoveJ Offs(Comprovacio, -100, 100, 60), v100, z0, tool0 \WObj:=M1;                          !Utilitzem un punt referenciat en el (0,0,0) i li apliquem un offset
+        MoveJ Offs(Comprovacio, -100, 100, 0), v100, z0, tool0 \WObj:=M1;
+        MoveL Offs(Comprovacio, -100, 100, 60), v100, z0, tool0 \WObj:=M1;
+        
+        contadorEspera:=contadorEspera-1;                                                           !Restem un valor a la variable que conta el numero de peces que estan esperant en la Mauina 1
+        TPWrite "Numero de peçes esperant " \Num:=contadorEspera;                                   !Escrivim en el FlexPendant quantes peces estan esperant
+        
+        IF PeçaTest=TRUE THEN                                                                       !Comprovem si hem d'enviar la peça a la taula test
+            MoveJ Offs(Comprovacio, 75, 75, 100) ,v100, z0, tool0 \WObj:=Taula_Test;
+            MoveL Offs(Comprovacio, 75, 75, 0), v100, z0, tool0 \WObj:=Taula_Test;
+           
+            CONNECT Time10s WITH Timer10s;                                                          !Quan la peça s'ha deixat a la taula test, fem connexió entre la variable i la Funcio Trap
+            ITimer 10, Time10s;                                                                     !   i configurem el timer a 10s i l'inicialitzem
+            
+            MoveL Offs(Comprovacio, 75, 75, 60) ,v100, z0, tool0 \WObj:=Taula_Test;
+            MoveJ home, v1000, z50, tool0;
+            
+            TotalTest:=TotalTest+1;                                                                 !Sumem 1 al numero de peces totals testejades
+            TPWrite "Peçes Test = " \Num:=TotalTest;                                                !Escrivim en el FlexPendant el valor total de peces testejades
+            PeçaTest:=FALSE;                                                                        !Descactivem la condicio per anar a la taula test
+        
+        ELSE
+            MoveJ Offs(Comprovacio, 50, 26.19, 60) ,v100, z0, tool0 \WObj:=Transfer;
+            MoveL Offs(Comprovacio, 50, 26.19, 0) ,v100, z0, tool0 \WObj:=Transfer;
+            
+            Activa_PLC:=TRUE;                                                                       !Variable que s'activa quan deixem una peça en el transfer que s'envia al Kepserver, per a que el PLC comenci el seu programa
+            
+            MoveL Offs(Comprovacio, 50, 26.19, 60) ,v100, z0, tool0 \WObj:=Transfer;
+            MoveJ home, v1000, z50, tool0;
+        ENDIF
+        
+        TotalM1:=TotalM1+1;                                                                         !Sumem 1 al numero de peces totals de la maquina 1
+        TPWrite "Peçes fetes M1 = " \Num:=TotalM1;                                                  !Escrivim en el FlexPendant el valor total de peces de la maquina 1
+        Activa_PLC:=FALSE;                                                                          !Posem a false la variable que desactiva la posta en marcha del PLC
+    ENDPROC
+    
+    PROC Moviment2()        !Funcio d'agafar la peça de la Maquina 1. Aquesta funcio pot decidir si deixar-la al transfer o la taula del test.
+        
+        MoveJ home, v1000, z50, tool0;
+        MoveJ Offs(Comprovacio, 100, -100, 60) ,v100, z0, tool0 \WObj:=M2;                          !Utilitzem un punt referenciat en el (0,0,0) i li apliquem un offset
+        MoveJ Offs(Comprovacio, 100, -100, 0) ,v100, z0, tool0 \WObj:=M2;
+        MoveJ Offs(Comprovacio, 100, -100, 60) ,v100, z0, tool0 \WObj:=M2;
+        
+        IF PeçaTest=TRUE THEN                                                                       !Comprovem si hem d'enviar la peça a la taula test
+            MoveJ Offs(Comprovacio, 75, 75, 60) ,v100, z0, tool0 \WObj:=Taula_Test;
+            MoveL Offs(Comprovacio, 75, 75, 0), v100, z0, tool0 \WObj:=Taula_Test;
+            
+            CONNECT Time10s WITH Timer10s;                                                          !Quan la peça s'ha deixat a la taula test, fem connexió entre la variable i la Funcio Trap
+            ITimer 10, Time10s;                                                                     !   i configurem el timer a 10s i l'inicialitzem
+            
+            
+            MoveL Offs(Comprovacio, 75, 75, 60) ,v100, z0, tool0 \WObj:=Taula_Test;
+            MoveJ home, v1000, z50, tool0;
+            
+            TotalTest:=TotalTest+1;                                                                 !Sumem 1 al numero de peces totals testejades
+            TPWrite "Peçes Test = " \Num:=TotalTest;                                                !Escrivim en el FlexPendant el valor total de peces testejades
+            PeçaTest:=FALSE;                                                                        !Descactivem la condicio per anar a la taula test
+            
+        ELSE
+            MoveJ Offs(Comprovacio, 50, 26.19, 60) ,v100, z0, tool0 \WObj:=Transfer;
+            MoveL Offs(Comprovacio, 50, 26.19, 0) ,v100, z0, tool0 \WObj:=Transfer;
+            
+            Activa_PLC:=TRUE;                                                                       !Variable que s'activa quan deixem una peça en el transfer que s'envia al Kepserver, per a que el PLC comenci el seu programa
+            
+            MoveL Offs(Comprovacio, 50, 26.19, 60) ,v100, z0, tool0 \WObj:=Transfer;
+            MoveJ home, v1000, z50, tool0;
+            
+
+        ENDIF
+            TotalM2:=TotalM2+1;                                                                     !Sumem 1 al numero de peces totals de la maquina 2
+            TPWrite "Peçes fetes M2 = " \Num:=TotalM2;                                              !Escrivim en el FlexPendant el valor total de peces de la maquina 1
+            Activa_PLC:=FALSE;                                                                      !Posem a false la variable que desactiva la posta en marcha del PLC
+    ENDPROC
+
+    PROC MovimentTest()     !Funcio per agafar una peça de la taula test i deixar-la al transfer
+        MoveJ Offs(Comprovacio, 75, 75, 60) ,v100, z0, tool0 \WObj:=Taula_Test;
+        MoveL Offs(Comprovacio, 75, 75, 0), v100, z0, tool0 \WObj:=Taula_Test;
+        MoveJ Offs(Comprovacio, 75, 75, 60) ,v100, z0, tool0 \WObj:=Taula_Test;
+        MoveJ Offs(Comprovacio, 50, 26.19, 60) ,v100, z0, tool0 \WObj:=Transfer;
+        MoveL Offs(Comprovacio, 50, 26.190, 0) ,v100, z0, tool0 \WObj:=Transfer;
+        
+        Activa_PLC:=TRUE;                                                                           !Variable que s'activa quan deixem una peça en el transfer que s'envia al Kepserver, per a que el PLC comenci el seu programa
+        
+        MoveL Offs(Comprovacio, 50, 26.19, 60) ,v100, z0, tool0 \WObj:=Transfer;
+        MoveJ home, v1000, z50, tool0;
+        
+        Activa_PLC:=FALSE;                                                                          !Posem a false la variable que desactiva la posta en marcha del PLC
+        Agafar_test:=FALSE;                                                                         !Desactivem la condicio per no agafar peces a la taula quan no es necessari
+    ENDPROC
+    
+    PROC Quaternions()      !Calculs a partir de les dades del fitxer llegit. Es fan 4 cops els mateixos calculs ja que tenim 4 Workobjects
+     R11:=Cos(data{4});   
+     R22:=Cos(data{4});
+     R33:=1;
+     q1:=Sqrt(R11+R22+R33+1)/2;
+     q2:=Sqrt(R11-R22-R33+1)/2;
+     q3:=Sqrt(R22-R11-R33+1)/2;
+     q4:=Sqrt(R33-R11-R22+1)/2;
+     M1 := [ FALSE, TRUE, "", [ [0, 0, 0], [1, 0, 0 ,0] ], [ [data{1}, data{2}, data{3}], [q1,q2,q3,q4] ] ];
+    
+    
+     R11:=Cos(data{8});   
+     R22:=Cos(data{8});
+     q1:=Sqrt(R11+R22+R33+1)/2;
+     q2:=Sqrt(R11-R22-R33+1)/2;
+     q3:=Sqrt(R22-R11-R33+1)/2;
+     q4:=Sqrt(R33-R11-R22+1)/2;
+     M2 := [ FALSE, TRUE, "", [ [0, 0, 0], [1, 0, 0 ,0] ], [ [data{5}, data{6}, data{7}], [q1,q2,q3,q4] ] ];
+     
+     
+     R11:=Cos(data{12});   
+     R22:=Cos(data{12});
+     q1:=Sqrt(R11+R22+R33+1)/2;
+     q2:=Sqrt(R11-R22-R33+1)/2;
+     q3:=Sqrt(R22-R11-R33+1)/2;
+     q4:=Sqrt(R33-R11-R22+1)/2;
+     Transfer := [ FALSE, TRUE, "", [ [0, 0, 0], [1, 0, 0 ,0] ], [ [data{9}, data{10}, data{11}], [q1,q2,q3,q4] ] ];
+     
+     R11:=Cos(data{16});   
+     R22:=Cos(data{16});
+     q1:=Sqrt(R11+R22+R33+1)/2;
+     q2:=Sqrt(R11-R22-R33+1)/2;
+     q3:=Sqrt(R22-R11-R33+1)/2;
+     q4:=Sqrt(R33-R11-R22+1)/2;
+     Taula_Test:= [ FALSE, TRUE, "", [ [0, 0, 0], [1, 0, 0 ,0] ], [ [data{13}, data{14}, data{15}], [q1,q2,q3,q4] ] ];
+    
+    ENDPROC
+    
+    TRAP TimerM1        !Interrupció cada 30s que suma 1 a la variable que conta el numero de peces que estan esperant en la maquina 1 i ho escriu per el FlexPendant
+ 
+    IF contadorEspera<=3 THEN
+        
+        contadorEspera:=contadorEspera+1;
+        TPWrite "Numero de peçes esperant " \Num:=contadorEspera;
+        
+    ENDIF
+    
+    
+    ENDTRAP
+    
+    TRAP SensorM2       !Interrupcio que s'entra quan el sensor de la maquina 2 detecta una peça
+    
+        PeçaM2:=TRUE;
+
+    ENDTRAP
+    
+    TRAP TimerTest      !Interrupcio cada 180s i activa una variable per a que si ens trobem en agafant una peça o no, la porti a la taula test
+    
+        PeçaTest:=TRUE;
+
+    ENDTRAP
+    
+    TRAP Timer10s       !Interrupcio que s'entra al deixar la peça a la taula test. S'espera 10s.  
+        
+        Agafar_test:=TRUE;
+        IDelete Time10s;
+    ENDTRAP
+    
+    
+ENDMODULE
